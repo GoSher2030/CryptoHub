@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>CryptoHub Pro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0a0f1f;
+  color: white;
+}
+
+/* ===== SCREENS ===== */
+.screen {
+  display: none;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.active { display: block; }
+
+/* ===== START ===== */
+.center {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+h1 {
+  font-size: 60px;
+  color: #00ffaa;
+  margin: 0;
+}
+
+.sub {
+  color: #aaa;
+  margin-top: 10px;
+}
+
+.btn {
+  margin-top: 20px;
+  padding: 12px 18px;
+  background: #00ffaa;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* ===== DASHBOARD ===== */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.search {
+  padding: 10px;
+  border-radius: 10px;
+  border: none;
+  width: 200px;
+}
+
+.coins {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.coin {
+  background: #111827;
+  padding: 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.coin:hover {
+  transform: scale(1.03);
+}
+
+/* ===== PRICE COLORS ===== */
+.up { color: #00ff88; }
+.down { color: #ff4d4d; }
+
+/* ===== CHART ===== */
+.chartBox {
+  margin-top: 20px;
+  background: #111827;
+  padding: 10px;
+  border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- ===== START SCREEN ===== -->
+<div id="home" class="screen active">
+  <div class="center">
+    <h1>CryptoHub</h1>
+    <div class="sub" id="greet"></div>
+    <div class="sub" id="time"></div>
+    <button class="btn" onclick="go('dash')">Войти</button>
+  </div>
+</div>
+
+<!-- ===== DASHBOARD ===== -->
+<div id="dash" class="screen">
+
+  <div class="topbar">
+    <h2>Криптовалюты</h2>
+    <input class="search" placeholder="Поиск..." oninput="filter(this.value)">
+  </div>
+
+  <div id="coins" class="coins"></div>
+
+  <button class="btn" onclick="go('home')">Назад</button>
+</div>
+
+<!-- ===== COIN ===== -->
+<div id="coinPage" class="screen">
+
+  <h2 id="coinTitle"></h2>
+  <h3 id="price"></h3>
+
+  <div class="chartBox">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <button class="btn" onclick="go('dash')">Назад</button>
+</div>
+
+<script>
+let currentChart;
+let allCoins = [];
+let selected = "bitcoin";
+
+/* ===== NAV ===== */
+function go(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ===== TIME ===== */
+function updateTime(){
+  const now = new Date();
+  const msk = new Date(now.getTime() + 3*3600000);
+
+  let h = msk.getUTCHours();
+
+  let greet =
+    h < 6 ? "Доброй ночи" :
+    h < 12 ? "Доброе утро" :
+    h < 18 ? "Добрый день" : "Добрый вечер";
+
+  document.getElementById("greet").innerText = greet + ", пользователь";
+  document.getElementById("time").innerText =
+    "МСК: " + msk.toTimeString().slice(0,5);
+}
+setInterval(updateTime,1000);
+updateTime();
+
+/* ===== COINS LIST ===== */
+const coinsList = [
+  "bitcoin",
+  "ethereum",
+  "solana",
+  "binancecoin",
+  "cardano",
+  "dogecoin",
+  "toncoin"
+];
+
+/* ===== LOAD DASHBOARD ===== */
+async function loadCoins(){
+  const res = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=" +
+    coinsList.join(",") +
+    "&vs_currencies=usd&include_24hr_change=true"
+  );
+
+  const data = await res.json();
+  allCoins = data;
+
+  renderCoins(data);
+}
+
+function renderCoins(data){
+  const box = document.getElementById("coins");
+  box.innerHTML = "";
+
+  coinsList.forEach(c => {
+    const price = data[c].usd;
+    const change = data[c].usd_24h_change.toFixed(2);
+
+    box.innerHTML += `
+      <div class="coin" onclick="openCoin('${c}')">
+        <b>${c.toUpperCase()}</b><br>
+        $${price}<br>
+        <span class="${change >= 0 ? 'up' : 'down'}">
+          ${change}%
+        </span>
+      </div>
+    `;
+  });
+}
+
+/* ===== FILTER ===== */
+function filter(val){
+  const filtered = coinsList.filter(c => c.includes(val.toLowerCase()));
+  const newData = {};
+  filtered.forEach(c => newData[c] = allCoins[c]);
+  renderCoins(newData);
+}
+
+/* ===== OPEN COIN ===== */
+async function openCoin(coin){
+  selected = coin;
+  go("coinPage");
+
+  document.getElementById("coinTitle").innerText = coin.toUpperCase();
+
+  loadChart();
+  setInterval(loadChart, 10000);
+}
+
+/* ===== CHART ===== */
+async function loadChart(){
+  const res = await fetch(
+    `https://api.coingecko.com/api/v3/coins/${selected}/market_chart?vs_currency=usd&days=1`
+  );
+
+  const data = await res.json();
+  const prices = data.prices.map(p => p[1]);
+
+  document.getElementById("price").innerText =
+    "Цена: $" + prices.at(-1).toFixed(2);
+
+  if(currentChart) currentChart.destroy();
+
+  currentChart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: prices.map((_,i)=>i),
+      datasets: [{
+        data: prices,
+        borderColor: "#00ffaa",
+        backgroundColor: "rgba(0,255,170,0.1)"
+      }]
+    }
+  });
+}
+
+/* ===== INIT ===== */
+loadCoins();
+setInterval(loadCoins, 10000);
+</script>
+
+</body>
+</html>
